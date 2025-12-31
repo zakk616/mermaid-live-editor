@@ -12,6 +12,7 @@
   import Share from '$/components/Share.svelte';
   import SyncRoughToolbar from '$/components/SyncRoughToolbar.svelte';
   import { Button } from '$/components/ui/button';
+  import Select from '$/components/ui/select';
   import * as Resizable from '$/components/ui/resizable';
   import { Switch } from '$/components/ui/switch';
   import { Toggle } from '$/components/ui/toggle';
@@ -285,21 +286,22 @@
     </div>
   {/snippet}
 
-  <Navbar mobileToggle={isMobile ? mobileToggle : undefined}>
+  <Navbar mobileToggle={isMobile ? mobileToggle : undefined}><div class="flex gap-2">
     <Toggle bind:pressed={isHistoryOpen} size="sm">
       <HistoryIcon />
     </Toggle>
     <Share />
-      <McWrapper class="flex items-center gap-2">
-        <select
+      
+        <Select
           aria-label="Save format"
-          class="rounded-md border px-2 py-1 text-sm"
+          size="sm"
+          className="border"
           bind:value={saveFormat}
           disabled={isSaving}>
           <option value="png">PNG</option>
           <option value="mmd">Mermaid</option>
           <option value="pdf">PDF</option>
-        </select>
+        </Select>
         <Button 
           variant="accent" 
           size="sm" 
@@ -308,7 +310,7 @@
           <DownloadIcon />
           {#if isSaving}Saving...{:else}Save{/if}
         </Button>
-      </McWrapper>
+      </div>
   </Navbar>
 
   <div class="flex flex-1 flex-col overflow-hidden" bind:clientWidth={width}>
