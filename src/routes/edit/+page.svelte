@@ -82,15 +82,8 @@
         });
         if (resp.ok) {
           const blob = await resp.blob();
-          const url = URL.createObjectURL(blob);
           const filename = `mermaid-diagram-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          await saveBlob(blob, filename);
           return;
         }
       } catch (e) {
@@ -136,13 +129,63 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/png');
+    // Convert dataUrl to blob and prompt save
+    const blob = await (await fetch(dataUrl)).blob();
+    await saveBlob(blob, filename.replace(/\.mmd$/, '.png'));
+  };
+
+  // Save blob to user-chosen location if possible (File System Access API), otherwise fallback to anchor download
+  async function saveBlob(blob: Blob, filename: string) {
+    // @ts-ignore - showSaveFilePicker may not exist in all browsers
+    const hasFilePicker = typeof window !== 'undefined' && 'showSaveFilePicker' in window;
+    if (hasFilePicker) {
+      try {
+        // @ts-ignore
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [
+            {
+              description: 'PNG Image',
+              accept: { 'image/png': ['.png'] }
+            }
+          ]
+        });
+        // @ts-ignore
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        // user probably cancelled or API threw — fallback to anchor
+        console.debug('showSaveFilePicker failed or cancelled, falling back', err);
+      }
+    }
+
+    // Fallback: open in new tab so user can Save As (Ctrl/Cmd+S) and choose location
+    const url = URL.createObjectURL(blob);
+    const newTab = window.open(url, '_blank');
+    if (newTab) {
+      try {
+        newTab.document.title = filename;
+      } catch {
+        // ignore cross-origin or blocked access
+      }
+      // Inform user they can use Save As to choose location
+      // Use a brief non-blocking alert (console + small on-page hint could be added later)
+      console.info('Opened image in new tab. Use Save As (Ctrl/Cmd+S) to choose location and filename.');
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      return;
+    }
+
+    // If popup blocked, fall back to direct download
     const a = document.createElement('a');
-    a.href = dataUrl.replace('image/png', 'image/octet-stream');
-    a.download = filename.replace(/\.mmd$/, '.png');
+    a.href = url;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
-  };
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
 
   let isHistoryOpen = $state(false);
 
