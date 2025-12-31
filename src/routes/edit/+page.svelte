@@ -83,8 +83,18 @@
         if (resp.ok) {
           const blob = await resp.blob();
           const filename = `mermaid-diagram-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-          await saveBlob(blob, filename);
-          return;
+          const url = URL.createObjectURL(blob);
+
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          
+          return; // <--- ADD THIS: Stop the function here so the fallback doesn't run!
         }
       } catch (e) {
         // server not available or failed — fall back to client-side rasterization
