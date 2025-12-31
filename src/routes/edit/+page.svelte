@@ -22,6 +22,10 @@
   import { stateStore, updateCodeStore, urlsStore } from '$/util/state';
   import { logEvent } from '$/util/stats';
   import { initHandler } from '$/util/util';
+  import { inputStateStore } from '$/util/state';
+  import { env } from '$/util/env';
+  import { get } from 'svelte/store';
+  import DownloadIcon from '~icons/material-symbols/download';
   import { onMount } from 'svelte';
   import CodeIcon from '~icons/custom/code';
   import HistoryIcon from '~icons/material-symbols/history';
@@ -58,6 +62,88 @@
     });
   });
 
+  const downloadMmd = async (event?: Event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const state = get(inputStateStore);
+    const code = state?.code ?? '';
+      const filename = `mermaid-diagram-${new Date().toISOString().replace(/[:.]/g, '-')}.mmd`;
+      // Optionally: send source to server for higher-quality rendering via mermaid-cli
+      // If server endpoint exists, prefer it to produce better PNGs
+      try {
+        const state = get(inputStateStore);
+        const code = state?.code ?? '';
+        const resp = await fetch('/api/render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, scale: 2, format: 'png' })
+        });
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const filename = `mermaid-diagram-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          return;
+        }
+      } catch (e) {
+        // server not available or failed — fall back to client-side rasterization
+        console.debug('Server render failed, falling back to client PNG', e);
+      }
+    // Fallback: client-side rasterization of current SVG to PNG
+    const svg = document.querySelector<SVGElement>('#container svg');
+    if (!svg) {
+      alert('Diagram SVG not found');
+      return;
+    }
+    const clone = svg.cloneNode(true) as SVGElement;
+    const box = svg.getBoundingClientRect();
+    const multiplier = 2;
+    const width = Math.max(1, Math.round(box.width * multiplier));
+    const height = Math.max(1, Math.round(box.height * multiplier));
+    clone.setAttribute('width', `${width}`);
+    clone.setAttribute('height', `${height}`);
+    clone.style.backgroundColor = window.getComputedStyle(document.body).getPropertyValue('--background');
+
+    const svgString = `<?xml version="1.0" encoding="UTF-8"?>\n${clone.outerHTML}`;
+    const svgBase64 = window.btoa(unescape(encodeURIComponent(svgString)));
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = (e) => reject(e);
+      img.src = `data:image/svg+xml;base64,${svgBase64}`;
+    }).catch((e) => {
+      console.error('Client rasterization failed', e);
+      alert('Failed to create PNG');
+      return;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      alert('Cannot get canvas context');
+      return;
+    }
+    ctx.fillStyle = window.getComputedStyle(document.body).getPropertyValue('--background');
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = dataUrl.replace('image/png', 'image/octet-stream');
+    a.download = filename.replace(/\.mmd$/, '.png');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   let isHistoryOpen = $state(false);
 
   let editorPane: Resizable.Pane | undefined;
@@ -86,16 +172,15 @@
       <HistoryIcon />
     </Toggle>
     <Share />
-    <McWrapper>
-      <Button
-        variant="accent"
-        size="sm"
-        href={$urlsStore.mermaidChart({ medium: 'save_diagram' }).save}
-        target="_blank">
-        <MermaidChartIcon />
-        Save diagram
-      </Button>
-    </McWrapper>
+      <McWrapper>
+        <Button 
+          variant="accent" 
+          size="sm" 
+          onclick={downloadMmd}>
+          <DownloadIcon />
+          Save diagram
+        </Button>
+      </McWrapper>
   </Navbar>
 
   <div class="flex flex-1 flex-col overflow-hidden" bind:clientWidth={width}>

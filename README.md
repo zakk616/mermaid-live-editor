@@ -111,6 +111,78 @@ pnpm dev -- --open
 
 This app is created with Svelte Kit.
 
+## Environment variables
+
+This project exposes several build-time and runtime environment variables (prefixed with `MERMAID_`) that control rendering, external integrations and features. Vite is configured with `envPrefix: 'MERMAID_'` so variables must start with `MERMAID_`.
+
+Important variables
+- `MERMAID_RENDERER_URL` — URL used to generate PNG/SVG preview links (default: empty). Example: `https://mermaid.ink`.
+- `MERMAID_KROKI_RENDERER_URL` — Kroki instance base URL for SVG/PNG exports (default: empty). Example: `https://kroki.io`.
+- `MERMAID_ANALYTICS_URL` — Plausible analytics endpoint (default: empty).
+- `MERMAID_DOMAIN` — Domain sent to analytics (default: empty).
+- `MERMAID_IS_ENABLED_MERMAID_CHART_LINKS` — When set to the string 'true' enables "Save to Mermaid Chart" and related links. If 'true', the app will open links at `https://mermaidchart.com` by default. (default: disabled)
+
+How the "Save" redirect works
+- When `MERMAID_IS_ENABLED_MERMAID_CHART_LINKS` is 'true', the app builds a save URL using `MCBaseURL` which defaults to `https://mermaidchart.com` and opens `MCBaseURL/app/plugin/save?state=...`. To prevent the app from redirecting to mermaidchart.com, run locally with the feature disabled (see examples below).
+
+Setting variables for local development
+- Using a `.env` file (recommended): create a file named `.env` in the project root and add variables, for example:
+
+```
+MERMAID_RENDERER_URL=https://mermaid.ink
+MERMAID_KROKI_RENDERER_URL=https://kroki.io
+MERMAID_ANALYTICS_URL=
+MERMAID_DOMAIN=
+MERMAID_IS_ENABLED_MERMAID_CHART_LINKS=false
+```
+
+- Temporary (one-off) in PowerShell:
+
+```powershell
+$Env:MERMAID_IS_ENABLED_MERMAID_CHART_LINKS='false'
+pnpm dev
+```
+
+- Temporary (one-off) in Bash:
+
+```bash
+MERMAID_IS_ENABLED_MERMAID_CHART_LINKS=false pnpm dev
+```
+
+Building Docker images with specific values
+- The `Dockerfile` accepts build args for these variables. Example disabling Mermaid Chart links at build time:
+
+```bash
+docker build \
+	--build-arg MERMAID_IS_ENABLED_MERMAID_CHART_LINKS=false \
+	--build-arg MERMAID_RENDERER_URL=https://mermaid.ink \
+	-t mermaid-js/mermaid-live-editor .
+```
+
+Checking the effective value in the running app
+- Open browser DevTools console in the Vite dev server and inspect:
+
+```js
+import.meta.env.MERMAID_IS_ENABLED_MERMAID_CHART_LINKS
+```
+
+Or check your shell environment:
+
+PowerShell:
+```powershell
+echo $Env:MERMAID_IS_ENABLED_MERMAID_CHART_LINKS
+```
+
+Bash:
+```bash
+echo $MERMAID_IS_ENABLED_MERMAID_CHART_LINKS
+```
+
+Notes
+- `MERMAID_IS_ENABLED_MERMAID_CHART_LINKS` must equal the string `true` (not boolean true) to be considered enabled by the app.
+- The Docker image uses build-time args (see `Dockerfile`) — those values are baked into the build output.
+- Use caution enabling external links in public or embedded deployments if you want to avoid sending serialized diagram state externally.
+
 ## Release
 
 When a PR is created targeting master, it will be built and deployed by Netlify.
