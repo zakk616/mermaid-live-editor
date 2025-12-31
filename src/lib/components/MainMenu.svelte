@@ -2,7 +2,7 @@
   import McWrapper from '$/components/McWrapper.svelte';
   import * as Popover from '$/components/ui/popover';
   import { Switch } from '$/components/ui/switch';
-  import { urlsStore } from '$/util/state';
+  import { urlsStore, updateCode } from '$/util/state';
   import { cn } from '$/utils';
   import { mode, setMode } from 'mode-watcher';
   import type { Component, Snippet } from 'svelte';
@@ -15,6 +15,7 @@
   import MenuIcon from '~icons/material-symbols/menu-rounded';
   import CommunityIcon from '~icons/material-symbols/person-play-outline-rounded';
   import PlaygroundIcon from '~icons/material-symbols/shape-line-outline';
+  import OpenIcon from '~icons/material-symbols/folder-open-rounded';
   import MermaidChartIcon from './MermaidChartIcon.svelte';
 
   interface MenuItem {
@@ -28,7 +29,34 @@
     renderer: (item: Omit<MenuItem, 'renderer'>) => ReturnType<Snippet>;
   }
 
+  let fileInput: HTMLInputElement;
+
+  const handleOpenFile = () => {
+    fileInput?.click();
+  };
+
+  const handleFileSelected = async (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+
+    try {
+      const content = await file.text();
+      // Load the file content as the diagram code directly
+      updateCode(content, { updateDiagram: true });
+      // Close the popover by clicking the trigger or pressing Escape
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    } catch (error) {
+      console.error('Failed to load file:', error);
+      alert('Failed to open file. Please check the console for details.');
+    }
+
+    // Reset input so the same file can be selected again
+    target.value = '';
+  };
+
   const menuItems: MenuItem[] = $derived([
+    { label: 'Open', icon: OpenIcon, href: '#', renderer: openFileMenuItem },
     { label: 'New', icon: AddIcon, href: $urlsStore.new, renderer: menuItem },
     { label: 'Duplicate', icon: DuplicateIcon, href: window.location.href, renderer: menuItem },
     {
@@ -122,6 +150,25 @@
       checked={$mode === 'dark'}
       onCheckedChange={(dark) => setMode(dark ? 'dark' : 'light')} />
   </div>
+{/snippet}
+
+{#snippet openFileMenuItem(options: MenuItem)}
+  <button
+    class={cn(
+      'flex w-full items-center justify-start gap-2 border-b-2 p-2 px-3 hover:bg-muted',
+      options.isSectionEnd && 'border-border-dark',
+      options.class
+    )}
+    onclick={handleOpenFile}>
+    <options.icon class="size-5" />
+    {options.label}
+  </button>
+  <input
+    type="file"
+    accept=".mmd,.txt"
+    class="hidden"
+    bind:this={fileInput}
+    onchange={handleFileSelected} />
 {/snippet}
 
 <Popover.Root>

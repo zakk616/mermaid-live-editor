@@ -169,18 +169,18 @@
     const hasFilePicker = typeof window !== 'undefined' && 'showSaveFilePicker' in window;
     const ext = filename.split('.').pop()?.toLowerCase() ?? '';
     let types: any[];
-    if (ext === 'png') {
-      types = [
-        {
-          description: 'PNG Image',
-          accept: { 'image/png': ['.png'] }
-        }
-      ];
-    } else if (ext === 'mmd') {
+    if (ext === 'mmd') {
       types = [
         {
           description: 'Mermaid (.mmd)',
           accept: { 'text/plain': ['.mmd'] }
+        }
+      ];
+    } else if (ext === 'png') {
+      types = [
+        {
+          description: 'PNG Image',
+          accept: { 'image/png': ['.png'] }
         }
       ];
     } else if (ext === 'pdf') {
@@ -263,7 +263,7 @@
   }
 
   let isHistoryOpen = $state(false);
-  let saveFormat = $state('png');
+  let saveFormat = $state('mmd');
 
   let editorPane: Resizable.Pane | undefined;
   $effect(() => {
@@ -298,9 +298,9 @@
           className="border"
           bind:value={saveFormat}
           disabled={isSaving}>
-          <option value="png">PNG</option>
           <option value="mmd">Mermaid</option>
           <option value="pdf">PDF</option>
+          <option value="png">PNG</option>
         </Select>
         <Button 
           variant="accent" 
