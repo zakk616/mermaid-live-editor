@@ -55,10 +55,18 @@ export async function POST({ request }) {
     });
 
     const data = await readFile(outPath);
+    const contentType =
+      format === 'png'
+        ? 'image/png'
+        : format === 'pdf'
+          ? 'application/pdf'
+          : format === 'svg'
+            ? 'image/svg+xml'
+            : 'application/octet-stream';
     return new Response(data, {
       status: 200,
       headers: {
-        'Content-Type': format === 'png' ? 'image/png' : 'application/octet-stream',
+        'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="diagram.${format}"`
       }
     });

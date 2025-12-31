@@ -62,142 +62,207 @@
     });
   });
 
+  let isSaving = false;
+
   const downloadMmd = async (event?: Event) => {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
-    const state = get(inputStateStore);
-    const code = state?.code ?? '';
-      const filename = `mermaid-diagram-${new Date().toISOString().replace(/[:.]/g, '-')}.mmd`;
-      // Optionally: send source to server for higher-quality rendering via mermaid-cli
-      // If server endpoint exists, prefer it to produce better PNGs
+    if (isSaving) return;
+    isSaving = true;
+    try {
+      const state = get(inputStateStore);
+      const code = state?.code ?? '';
+      const baseName = `mermaid-diagram-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+
+      if (saveFormat === 'mmd') {
+        const filename = `${baseName}.mmd`;
+        const blob = new Blob([code], { type: 'text/plain' });
+        await saveBlob(blob, filename);
+        return;
+      }
+
+      // Try server-side render first for the selected raster format (png/pdf)
+      const desiredFormat = saveFormat === 'pdf' ? 'pdf' : 'png';
       try {
-        const state = get(inputStateStore);
-        const code = state?.code ?? '';
         const resp = await fetch('/api/render', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, scale: 2, format: 'png' })
+          body: JSON.stringify({ code, scale: 2, format: desiredFormat })
         });
         if (resp.ok) {
           const blob = await resp.blob();
-          const filename = `mermaid-diagram-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-          const url = URL.createObjectURL(blob);
-
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          
-          setTimeout(() => URL.revokeObjectURL(url), 2000);
-          
-          return; // <--- ADD THIS: Stop the function here so the fallback doesn't run!
+          const filename = `${baseName}.${desiredFormat}`;
+          await saveBlob(blob, filename);
+          return;
         }
       } catch (e) {
-        // server not available or failed — fall back to client-side rasterization
-        console.debug('Server render failed, falling back to client PNG', e);
+        console.debug('Server render failed, falling back to client rasterization', e);
       }
-    // Fallback: client-side rasterization of current SVG to PNG
-    const svg = document.querySelector<SVGElement>('#container svg');
-    if (!svg) {
-      alert('Diagram SVG not found');
-      return;
-    }
-    const clone = svg.cloneNode(true) as SVGElement;
-    const box = svg.getBoundingClientRect();
-    const multiplier = 2;
-    const width = Math.max(1, Math.round(box.width * multiplier));
-    const height = Math.max(1, Math.round(box.height * multiplier));
-    clone.setAttribute('width', `${width}`);
-    clone.setAttribute('height', `${height}`);
-    clone.style.backgroundColor = window.getComputedStyle(document.body).getPropertyValue('--background');
 
-    const svgString = `<?xml version="1.0" encoding="UTF-8"?>\n${clone.outerHTML}`;
-    const svgBase64 = window.btoa(unescape(encodeURIComponent(svgString)));
-    const img = new Image();
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = (e) => reject(e);
-      img.src = `data:image/svg+xml;base64,${svgBase64}`;
-    }).catch((e) => {
-      console.error('Client rasterization failed', e);
-      alert('Failed to create PNG');
-      return;
-    });
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      alert('Cannot get canvas context');
-      return;
+      // Fallback: client-side rasterization of current SVG to PNG
+      const svg = document.querySelector<SVGElement>('#container svg');
+      if (!svg) {
+        alert('Diagram SVG not found');
+        return;
+      }
+      const clone = svg.cloneNode(true) as SVGElement;
+      const box = svg.getBoundingClientRect();
+      const multiplier = 2;
+      const width = Math.max(1, Math.round(box.width * multiplier));
+      const height = Math.max(1, Math.round(box.height * multiplier));
+      clone.setAttribute('width', `${width}`);
+      clone.setAttribute('height', `${height}`);
+      clone.style.backgroundColor = window.getComputedStyle(document.body).getPropertyValue('--background');
+
+      const svgString = `<?xml version="1.0" encoding="UTF-8"?>\n${clone.outerHTML}`;
+      const svgBase64 = window.btoa(unescape(encodeURIComponent(svgString)));
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = (e) => reject(e);
+        img.src = `data:image/svg+xml;base64,${svgBase64}`;
+      }).catch((e) => {
+        console.error('Client rasterization failed', e);
+        alert('Failed to create PNG');
+        return;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        alert('Cannot get canvas context');
+        return;
+      }
+      ctx.fillStyle = window.getComputedStyle(document.body).getPropertyValue('--background');
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/png');
+      // Convert dataUrl to blob and prompt save
+      const blob = await (await fetch(dataUrl)).blob();
+      if (saveFormat === 'pdf') {
+        // Fallback for PDF: open image in new tab and trigger print (user can Save as PDF)
+        const imgUrl = dataUrl;
+        const filename = `${baseName}.pdf`;
+        const newTab = window.open('', '_blank');
+        if (newTab) {
+          const html = `<!doctype html><html><head><title>${filename}</title></head><body style="margin:0"><img src="${imgUrl}" style="width:100%;height:auto;display:block" onload="setTimeout(()=>window.print(),100)"></body></html>`;
+          newTab.document.open();
+          newTab.document.write(html);
+          newTab.document.close();
+          return;
+        }
+        // If new tab blocked, fall back to saving PNG
+      }
+      await saveBlob(blob, `${baseName}.png`);
+    } finally {
+      isSaving = false;
     }
-    ctx.fillStyle = window.getComputedStyle(document.body).getPropertyValue('--background');
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/png');
-    // Convert dataUrl to blob and prompt save
-    const blob = await (await fetch(dataUrl)).blob();
-    await saveBlob(blob, filename.replace(/\.mmd$/, '.png'));
   };
 
   // Save blob to user-chosen location if possible (File System Access API), otherwise fallback to anchor download
   async function saveBlob(blob: Blob, filename: string) {
     // @ts-ignore - showSaveFilePicker may not exist in all browsers
     const hasFilePicker = typeof window !== 'undefined' && 'showSaveFilePicker' in window;
+    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+    let types: any[];
+    if (ext === 'png') {
+      types = [
+        {
+          description: 'PNG Image',
+          accept: { 'image/png': ['.png'] }
+        }
+      ];
+    } else if (ext === 'mmd') {
+      types = [
+        {
+          description: 'Mermaid (.mmd)',
+          accept: { 'text/plain': ['.mmd'] }
+        }
+      ];
+    } else if (ext === 'pdf') {
+      types = [
+        {
+          description: 'PDF Document',
+          accept: { 'application/pdf': ['.pdf'] }
+        }
+      ];
+    } else {
+      types = [
+        {
+          description: 'File',
+          accept: { '*/*': ['.*'] }
+        }
+      ];
+    }
+
     if (hasFilePicker) {
       try {
         // @ts-ignore
         const handle = await window.showSaveFilePicker({
           suggestedName: filename,
-          types: [
-            {
-              description: 'PNG Image',
-              accept: { 'image/png': ['.png'] }
-            }
-          ]
+          types
         });
         // @ts-ignore
         const writable = await handle.createWritable();
         await writable.write(blob);
         await writable.close();
         return;
-      } catch (err) {
-        // user probably cancelled or API threw — fallback to anchor
+      } catch (err: any) {
+        // user probably cancelled or API threw — log for diagnostics
         console.debug('showSaveFilePicker failed or cancelled, falling back', err);
+        // If the user explicitly cancelled the picker, don't run fallback flows.
+        // Common names: 'AbortError', 'NotAllowedError'
+        const name = err && (err.name || err.constructor?.name);
+        if (name === 'AbortError' || name === 'NotAllowedError') {
+          return; // user cancelled — stop here
+        }
+        // continue to fallback methods below for other errors
       }
     }
 
-    // Fallback: open in new tab so user can Save As (Ctrl/Cmd+S) and choose location
-    const url = URL.createObjectURL(blob);
-    const newTab = window.open(url, '_blank');
-    if (newTab) {
-      try {
-        newTab.document.title = filename;
-      } catch {
-        // ignore cross-origin or blocked access
-      }
-      // Inform user they can use Save As to choose location
-      // Use a brief non-blocking alert (console + small on-page hint could be added later)
-      console.info('Opened image in new tab. Use Save As (Ctrl/Cmd+S) to choose location and filename.');
+    // Fallback 1: force a download with an anchor (preferred to opening preview in a new tab)
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      // Some browsers need the link in the document to work
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
       return;
+    } catch (err) {
+      console.debug('Anchor download failed, falling back to open in new tab', err);
     }
 
-    // If popup blocked, fall back to direct download
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    // Fallback 2: open in new tab so user can Save As (Ctrl/Cmd+S) and choose location
+    try {
+      const url = URL.createObjectURL(blob);
+      const newTab = window.open(url, '_blank');
+      if (newTab) {
+        try {
+          newTab.document.title = filename;
+        } catch {
+          // ignore cross-origin or blocked access
+        }
+        console.info('Opened file in new tab. Use Save As (Ctrl/Cmd+S) to choose location and filename.');
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        return;
+      }
+    } catch (err) {
+      console.debug('Opening new tab failed', err);
+    }
+
+    // Last resort: notify user
+    alert('Unable to save file automatically. Please copy the content or try a different browser.');
   }
 
   let isHistoryOpen = $state(false);
+  let saveFormat = $state('png');
 
   let editorPane: Resizable.Pane | undefined;
   $effect(() => {
@@ -225,13 +290,23 @@
       <HistoryIcon />
     </Toggle>
     <Share />
-      <McWrapper>
+      <McWrapper class="flex items-center gap-2">
+        <select
+          aria-label="Save format"
+          class="rounded-md border px-2 py-1 text-sm"
+          bind:value={saveFormat}
+          disabled={isSaving}>
+          <option value="png">PNG</option>
+          <option value="mmd">Mermaid</option>
+          <option value="pdf">PDF</option>
+        </select>
         <Button 
           variant="accent" 
           size="sm" 
-          onclick={downloadMmd}>
+          onclick={downloadMmd}
+          disabled={isSaving}>
           <DownloadIcon />
-          Save diagram
+          {#if isSaving}Saving...{:else}Save{/if}
         </Button>
       </McWrapper>
   </Navbar>
