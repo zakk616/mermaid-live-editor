@@ -27,7 +27,9 @@
   import { env } from '$/util/env';
   import { get } from 'svelte/store';
   import DownloadIcon from '~icons/material-symbols/download';
+  import FolderOpenIcon from '~icons/material-symbols/folder-open';
   import { onMount } from 'svelte';
+  import { openFileWithAutoSave, initAutoSave, autoSaveStatusStore, fileHandleStore, clearAutoSave } from '$/util/autoSave';
   import CodeIcon from '~icons/custom/code';
   import HistoryIcon from '~icons/material-symbols/history';
   import GearIcon from '~icons/material-symbols/settings-outline-rounded';
@@ -61,6 +63,8 @@
     window.addEventListener('appinstalled', () => {
       logEvent('pwaInstalled', { isMobile });
     });
+    // Initialize auto-save functionality
+    initAutoSave();
   });
 
   let isSaving = false;
@@ -264,6 +268,20 @@
 
   let isHistoryOpen = $state(false);
   let saveFormat = $state('mmd');
+  
+  // Open file handler
+  const openFile = async () => {
+    try {
+      const content = await openFileWithAutoSave();
+      if (content !== null) {
+        updateCodeStore({ code: content, updateDiagram: true });
+        logEvent('fileOpened');
+      }
+    } catch (error) {
+      console.error('Failed to open file:', error);
+      alert('Failed to open file. File System Access API may not be supported in your browser.');
+    }
+  };
 
   let editorPane: Resizable.Pane | undefined;
   $effect(() => {
@@ -291,6 +309,37 @@
       <HistoryIcon />
     </Toggle>
     <Share />
+    
+    <div class="flex items-center gap-1 rounded border border-border bg-muted px-2 py-1 text-xs whitespace-nowrap">
+      {#if $fileHandleStore}
+        {#if $autoSaveStatusStore === 'saving'}
+          <span class="text-muted-foreground">Auto-saving...</span>
+        {:else if $autoSaveStatusStore === 'saved'}
+          <span class="text-green-600 dark:text-green-400">✓ Saved</span>
+        {:else if $autoSaveStatusStore === 'error'}
+          <span class="text-red-600 dark:text-red-400">⚠ Save failed</span>
+        {:else}
+          <span class="text-muted-foreground">Auto-save: On</span>
+        {/if}
+        <button
+          onclick={() => clearAutoSave()}
+          class="ml-1 text-muted-foreground hover:text-foreground"
+          title="Disable auto-save">
+          ×
+        </button>
+      {:else}
+        <span class="text-muted-foreground text-gray-400">Auto-save: Off</span>
+      {/if}
+    </div>
+    
+    <Button
+      variant="outline"
+      size="sm"
+      onclick={openFile}
+      title="Open .mmd file">
+      <FolderOpenIcon />
+      Open
+    </Button>
       
         <Select
           aria-label="Save format"
